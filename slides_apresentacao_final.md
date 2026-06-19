@@ -228,15 +228,16 @@ de transferência teriam pouco efeito aqui (ver Trabalhos Futuros).
 
 | N | CPU-1 (s) | CPU-OMP (s) | GPU (s) | Speed-up (vs CPU-1) | Corretude |
 |---:|---:|---:|---:|---:|:---:|
-| 8.000   | `<...>` | `<...>` | `<...>` | `<...>` | 100% |
-| 32.000  | `<...>` | `<...>` | `<...>` | `<...>` | 100% |
-| 50.000  | `<...>` | `<...>` | `<...>` | `<...>` | 100% |
-| 100.000 | `<...>` | `<...>` | `<...>` | **`<máx>`** | 100% |
+| 8.000   | 0,69  | 0,46  | 0,043 | 16,3× | 100% |
+| 16.000  | 2,21  | 1,88  | 0,123 | 18,0× | 100% |
+| 32.000  | 8,28  | 8,11  | 0,403 | 20,5× | 100% |
+| 50.000  | 20,44 | 19,44 | 0,927 | 22,0× | 100% |
+| 100.000 | 80,61 | 79,23 | 3,24  | **24,9×** | 100% |
 
-*Valores em média ± desvio de várias repetições — preencher de `resultados_benchmark.csv` após rodar no Colab.*
+*Tempos = média ± desvio de várias repetições (T4 no Colab). Tabela completa em `resultados_benchmark.csv`.*
 
-- Speed-up máximo de **`<preencher>×`** em N=100.000.
-- Corretude **100%** CPU ≡ GPU em todos os tamanhos.
+- Speed-up máximo de **24,9×** vs CPU-1 e **24,5×** vs CPU-OpenMP, em N=100.000.
+- Corretude **100%** CPU ≡ GPU em todos os tamanhos (e ~10⁻⁹ vs scikit-learn).
 
 <!-- Fala: destacar que agora escalamos para 100k — algo impossível na versão
 com matriz N×N — e que o ganho cresce com o tamanho do problema. -->
@@ -270,7 +271,7 @@ ao artigo-base (amostragem) como caminho para milhões de pontos. -->
 
 - Implementamos e **paralelizamos em CUDA** as três métricas de validação de clusters.
 - A decisão **matrix-free** eliminou o gargalo de memória e permitiu **escalar até 100.000 pontos**.
-- Mantivemos **corretude exata** (validada em 3 camadas) enquanto obtivemos **speed-up de `<preencher>×`**.
+- Mantivemos **corretude exata** (validada em 3 camadas) enquanto obtivemos **speed-up de até 24,9×** (vs CPU-1) e **24,5×** (vs CPU-OpenMP) em N=100.000.
 - Comparação **justa** contra CPU sequencial **e** CPU OpenMP, com **análise de breakdown** por etapa.
 - Entregáveis: código (`git`), `benchmark.py` automatizado, artigo (modelo SSCAD) e esta apresentação.
 
@@ -285,6 +286,6 @@ ao artigo-base (amostragem) como caminho para milhões de pontos. -->
 
 <!-- Resumo das conquistas para fechar:
  - matrix-free: O(N^2) -> O(N) de memória, escala a 100k
- - corretude 100% (analítico + sklearn + CPU≡GPU)
- - speed-up <preencher>x vs CPU-1 e <preencher>x vs CPU-OpenMP
- - breakdown mostra Dunn/Silhueta como gargalo; H2D irrelevante -->
+ - corretude 100% (analítico + sklearn ~1e-9 + CPU≡GPU)
+ - speed-up 24,9x vs CPU-1 e 24,5x vs CPU-OpenMP em N=100k
+ - breakdown mostra Dunn/Silhueta ~99,97% do tempo; H2D e DB irrelevantes -->

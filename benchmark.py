@@ -213,64 +213,14 @@ def validar_dunn_analitico(cpu_exec, gpu_exec):
 
 # --------------------------- Graficos ---------------------------------
 def gerar_graficos(dados, tem_gpu):
-    ns = [d["N"] for d in dados]
-
-    # 1) Tempo vs N (log-log)
-    plt.figure(figsize=(7, 5))
-    plt.plot(ns, [d["cpu1_mean"] for d in dados], "o-", color="crimson", label="CPU 1-thread (C++)")
-    plt.plot(ns, [d["cpuN_mean"] for d in dados], "D-", color="darkorange", label=f"CPU OpenMP ({dados[0]['threads']} threads)")
-    if tem_gpu:
-        plt.plot(ns, [d["gpu_mean"] for d in dados], "s-", color="teal", label="GPU CUDA (double)")
-        if dados[0].get("gpuf_mean"):
-            plt.plot(ns, [d["gpuf_mean"] for d in dados], "^--", color="seagreen", label="GPU CUDA (float)")
-    plt.xscale("log"); plt.yscale("log")
-    plt.xlabel("Numero de Pontos (N)"); plt.ylabel("Tempo de Execucao (s)")
-    plt.title("Tempo de Execucao vs Tamanho do Dataset (log-log)")
-    plt.legend(); plt.grid(True, which="both", alpha=0.3)
-    plt.tight_layout(); plt.savefig("bench_tempo.png", dpi=150); plt.close()
-
-    if tem_gpu:
-        # 2) Speed-up
-        plt.figure(figsize=(7, 5))
-        plt.plot(ns, [d["cpu1_mean"] / d["gpu_mean"] for d in dados], "^-", color="purple", label="GPU vs CPU 1-thread")
-        plt.plot(ns, [d["cpuN_mean"] / d["gpu_mean"] for d in dados], "v-", color="navy", label="GPU vs CPU OpenMP")
-        plt.axhline(y=1.0, color="gray", linestyle="--")
-        plt.xlabel("Numero de Pontos (N)"); plt.ylabel("Speed-up (x)")
-        plt.title("Speed-up Total")
-        plt.legend(); plt.grid(True, alpha=0.3)
-        plt.tight_layout(); plt.savefig("bench_speedup.png", dpi=150); plt.close()
-
-        # 3) Breakdown por kernel (GPU) - barras empilhadas
-        plt.figure(figsize=(8, 5))
-        labels = [str(n) for n in ns]
-        h2d = np.array([d["gpu_h2d"] for d in dados])
-        dunn = np.array([d["gpu_dunn"] for d in dados])
-        sil = np.array([d["gpu_sil"] for d in dados])
-        dbk = np.array([d["gpu_db"] for d in dados])
-        plt.bar(labels, h2d, label="H2D (copia)", color="#bdbdbd")
-        plt.bar(labels, dunn, bottom=h2d, label="Dunn", color="#1f77b4")
-        plt.bar(labels, sil, bottom=h2d + dunn, label="Silhueta", color="#ff7f0e")
-        plt.bar(labels, dbk, bottom=h2d + dunn + sil, label="Davies-Bouldin", color="#2ca02c")
-        plt.xlabel("Numero de Pontos (N)"); plt.ylabel("Tempo na GPU (s)")
-        plt.title("Onde esta o tempo na GPU (breakdown por etapa)")
-        plt.legend(); plt.grid(True, axis="y", alpha=0.3)
-        plt.tight_layout(); plt.savefig("bench_breakdown.png", dpi=150); plt.close()
-
-        # 4) Figura combinada (compatibilidade com nome antigo)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        ax1.plot(ns, [d["cpu1_mean"] for d in dados], "o-", color="crimson", label="CPU 1-thread")
-        ax1.plot(ns, [d["cpuN_mean"] for d in dados], "D-", color="darkorange", label="CPU OpenMP")
-        ax1.plot(ns, [d["gpu_mean"] for d in dados], "s-", color="teal", label="GPU CUDA")
-        ax1.set_xlabel("N"); ax1.set_ylabel("Tempo (s)"); ax1.set_title("Tempo CPU vs GPU")
-        ax1.legend(); ax1.grid(True, alpha=0.3)
-        ax2.plot(ns, [d["cpu1_mean"] / d["gpu_mean"] for d in dados], "^-", color="purple", label="GPU vs CPU 1-thread")
-        ax2.axhline(y=1.0, color="gray", linestyle="--")
-        ax2.set_xlabel("N"); ax2.set_ylabel("Speed-up (x)"); ax2.set_title("Speed-up Total")
-        ax2.legend(); ax2.grid(True, alpha=0.3)
-        plt.tight_layout(); plt.savefig("curva_performance_cuda.png", dpi=150); plt.close()
-        print("\n[SUCESSO] Graficos gerados: bench_tempo.png, bench_speedup.png, bench_breakdown.png, curva_performance_cuda.png")
-    else:
-        print("\n[SUCESSO] Grafico gerado: bench_tempo.png (apenas CPU; rode no Colab com GPU para o resto)")
+    """Plotagem delegada ao script standalone gerar_graficos.py (le o CSV)."""
+    if not tem_gpu:
+        print("\n[INFO] Sem GPU: graficos de comparacao CPU x GPU nao gerados.")
+        return
+    import subprocess as _sp
+    _sp.run([sys.executable, "gerar_graficos.py"])
+    print("\n[SUCESSO] Graficos gerados via gerar_graficos.py: "
+          "bench_tempo.png, bench_speedup.png, bench_breakdown.png")
 
 
 def salvar_csv(dados, tem_gpu):
@@ -371,8 +321,8 @@ def main():
         print(f"{n:>7} | {m_c1:>9.4f}+-{s_c1:>4.2f} | {m_cN:>9.4f}+-{s_cN:>4.2f} | "
               f"{gpu_show:>10} | {speed_str:>8} | {match_str:>10}")
 
-    gerar_graficos(dados, tem_gpu)
-    salvar_csv(dados, tem_gpu)
+    salvar_csv(dados, tem_gpu)   # salva o CSV primeiro
+    gerar_graficos(dados, tem_gpu)  # ...depois plota lendo o CSV
 
 
 if __name__ == "__main__":

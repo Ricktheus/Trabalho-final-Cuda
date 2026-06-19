@@ -28,7 +28,10 @@ Este diretório contém os seguintes 8 arquivos essenciais:
 4. **`relatorio_etapa2.md`**: Relatório técnico da Etapa 2 (fundamentação matemática e fluxo da GPU).
 5. **`slides_proposta_cad.md` / `.pdf`**: Slides da Etapa 2 (Marp / PDF).
 6. **`slides_apresentacao_final.md`**: Roteiro completo dos slides da **apresentação final (3ª parte)**, com slides de imagem dedicados.
-7. **(Gerados pelo benchmark no Colab)** `bench_tempo.png`, `bench_speedup.png`, `bench_breakdown.png`, `curva_performance_cuda.png` e a tabela `resultados_benchmark.csv`.
+7. **`gerar_graficos.py`**: Gera os gráficos finais a partir do CSV (não precisa de GPU/sklearn).
+8. **`EXPLICACAO_CODIGO.md`**: Explicação bloco-a-bloco de todo o código (para defesa).
+9. **`GUIA_CONCEITUAL.md`**: Guia conceitual com analogias, críticas, limitações e banco de perguntas.
+10. **(Gerados no Colab)** `resultados_benchmark.csv` (tabela final) e `bench_tempo.png`, `bench_speedup.png`, `bench_breakdown.png`.
 
 ---
 
