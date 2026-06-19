@@ -1,0 +1,32 @@
+================================================================
+Compilando baseline_cpu.cpp...
+Compilação da CPU concluída com sucesso.
+Verificando compilador CUDA (nvcc)...
+Compilador nvcc detectado. Compilando metrics_cuda.cu...
+Compilação da GPU (CUDA) concluída com sucesso.
+
+================================================================
+VALIDACAO DE CORRETUDE CONTRA SCRIPT SCIKIT-LEARN
+================================================================
+  Silhueta  : C++=0.828162 | Sklearn=0.828162 | dif=2.28e-09
+  Davies-B. : C++=0.245271 | Sklearn=0.245271 | dif=3.18e-09
+Validacao contra scikit-learn: SUCESSO (100% Match)
+
+================================================================
+VALIDACAO DO INDICE DE DUNN CONTRA CASO ANALITICO
+================================================================
+  Dunn CPU: C++=2.000000 | Esperado=2.000000 | dif=0.00e+00
+  Dunn GPU: CUDA=2.000000 | Esperado=2.000000 | dif=0.00e+00
+Validacao analitica do Dunn: SUCESSO (100% Match)
+
+Iniciando simulações de benchmark...
+     N |  T_CPU (s) |  T_GPU (s) | Speed-up | Dunn Match?
+----------------------------------------------------------------
+   250 |     0.0010 |     0.0012 |    0.87x |  SIM (100%)
+   500 |     0.0032 |     0.0016 |    1.97x |  SIM (100%)
+  1000 |     0.0113 |     0.0026 |    4.29x |  SIM (100%)
+  2000 |     0.0456 |     0.0051 |    8.88x |  SIM (100%)
+  4000 |     0.2187 |     0.0147 |   14.89x |  SIM (100%)
+  8000 |     0.9191 |     0.0274 |   33.51x |  SIM (100%)
+
+[SUCESSO] Gráfico 'curva_performance_cuda.png' gerado e salvo.
