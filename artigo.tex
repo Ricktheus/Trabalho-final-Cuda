@@ -13,9 +13,21 @@
 \documentclass[12pt]{article}
 
 \usepackage{sbc-template}
-\usepackage{graphicx,url}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage[brazil]{babel}
+
+% Fallback: define o ambiente 'resumo' caso o sbc-template.sty carregado
+% nao o defina (versoes antigas ou arquivos incorretos).
+\makeatletter
+\@ifundefined{resumo}{%
+  \newenvironment{resumo}{%
+    \renewcommand{\abstractname}{Resumo}%
+    \begin{abstract}}{\end{abstract}}%
+}{}
+\makeatother
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{listings}
