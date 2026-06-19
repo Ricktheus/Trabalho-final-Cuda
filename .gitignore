@@ -17,3 +17,15 @@ __pycache__/
 # Dados temporarios gerados pelo benchmark
 temp_*.csv
 temp_data_*.csv
+
+# Artefatos de compilacao LaTeX
+*.aux
+*.log
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
