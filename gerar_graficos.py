@@ -185,11 +185,16 @@ def grafico_breakdown(df):
     axR.set_ylabel("Porcentagem do tempo de GPU (%)")
     axR.set_title("Composicao do tempo — 100% empilhado")
     axR.legend(loc="lower center", ncol=2, fontsize=8)
-    axR.set_ylim(0, 100)
-    # anota o percentual Dunn+Silhueta no maior N
+    axR.set_ylim(0, 113)  # folga acima dos 100% para o callout (evita corte na borda)
+    # callout do percentual Dunn+Silhueta no maior N: acima das barras, com seta,
+    # ancorado para o interior para nunca cortar na borda direita
     i = len(N) - 1
-    axR.text(x[i], 50, f"Dunn+Silh\n≈ {p_dunn[i] + p_silh[i]:.1f}%",
-             ha="center", va="center", fontsize=9, color="white", fontweight="bold")
+    axR.annotate(f"Dunn + Silhueta\n$\\approx$ {p_dunn[i] + p_silh[i]:.1f}% do tempo",
+                 xy=(x[i], 100), xytext=(x[i] - 2.6, 108),
+                 ha="center", va="center", fontsize=8.5, fontweight="bold",
+                 color="#1f3a5f",
+                 arrowprops=dict(arrowstyle="->", color="#1f3a5f", lw=1.2),
+                 annotation_clip=False)
 
     plt.tight_layout()
     plt.savefig("bench_breakdown.png", dpi=150)
