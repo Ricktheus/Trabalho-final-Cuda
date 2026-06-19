@@ -22,14 +22,13 @@ Este diretório contém todos os arquivos consolidados da **Etapa 2 (Modelagem e
 
 Este diretório contém os seguintes 8 arquivos essenciais:
 
-1. **`baseline_cpu.cpp`**: Algoritmo sequencial em C++ que calcula as três métricas. Serve como baseline de comparação de desempenho.
-2. **`metrics_cuda.cu`**: Código paralelo em CUDA C++ contendo os kernels e otimizações de GPU.
-3. **`benchmark.py`**: Script de automação em Python para geração de dados sintéticos, compilação cruzada, execução de testes, validação matemática e plotagem de gráficos.
-4. **`relatorio_etapa2.md`**: Relatório técnico em Markdown detalhando a fundamentação matemática, o fluxo da GPU e a análise de desempenho.
-5. **`slides_proposta_cad.md`**: Slides da apresentação da Etapa 2 escritos no formato Marp.
-6. **`slides_proposta_cad.pdf`**: Slides da apresentação exportados em PDF prontos para exibição.
-7. **`curva_performance_cuda.png`**: Gráfico gerado contendo os tempos de execução (CPU vs GPU) e o Speed-up medidos no Google Colab.
-8. **`curva_complexidade_cpu.png`**: Gráfico local contendo a curva de crescimento quadrático $O(N^2)$ da CPU.
+1. **`baseline_cpu.cpp`**: Baseline em C++ (**matrix-free**) que calcula as três métricas, com **paralelização OpenMP** opcional (controlada por `OMP_NUM_THREADS`). Distâncias calculadas on-the-fly → memória O(N·D).
+2. **`metrics_cuda.cu`**: Código paralelo em CUDA C++ (**matrix-free**) com os kernels de GPU. Suporta `double` (padrão) e `float` (flag `-DUSE_FLOAT`).
+3. **`benchmark.py`**: Automação em Python — gera dados sintéticos, compila (g++/nvcc), valida a corretude, mede tempos com **repetições (média ± desvio)** comparando **CPU-1 × CPU-OpenMP × GPU** e plota os gráficos.
+4. **`relatorio_etapa2.md`**: Relatório técnico da Etapa 2 (fundamentação matemática e fluxo da GPU).
+5. **`slides_proposta_cad.md` / `.pdf`**: Slides da Etapa 2 (Marp / PDF).
+6. **`slides_apresentacao_final.md`**: Roteiro completo dos slides da **apresentação final (3ª parte)**, com slides de imagem dedicados.
+7. **(Gerados pelo benchmark no Colab)** `bench_tempo.png`, `bench_speedup.png`, `bench_breakdown.png`, `curva_performance_cuda.png` e a tabela `resultados_benchmark.csv`.
 
 ---
 
@@ -45,24 +44,24 @@ Para garantir um benchmark real e reprodutível, os dados de teste são gerados 
 
 ---
 
-## 4. Projeto e Otimização dos Kernels CUDA
+## 4. Projeto e Otimização dos Kernels CUDA (Matrix-free)
 
-A paralelização foi estruturada para mitigar o gargalo de memória global da GPU através de coalescência de acessos e reduções locais:
+**Decisão central:** a versão final **não materializa** a matriz de distâncias `D[N×N]`. Em N=100.000 essa matriz custaria ~80 GB e estouraria tanto a VRAM da GPU quanto a RAM da CPU (além de causar overflow de `int` em `N*N`). As distâncias são **recalculadas on-the-fly** dentro dos kernels → memória **O(N·D)** em vez de **O(N²)**, viabilizando N=50.000/100.000.
 
-### A. Matriz de Distâncias (`pairwise_distances_kernel` - Coalescido)
-- **Coalescência de Escrita:** Swappamos a indexação clássica. Definindo `j = blockIdx.x * blockDim.x + threadIdx.x` como o índice de coluna (que varia rápido entre threads consecutivas de uma warp) e `i = blockIdx.y * blockDim.y + threadIdx.y` como o índice de linha. Assim, escritas em `D[i * N + j]` são feitas de forma perfeitamente sequencial e coalescida na memória global da GPU.
+### A. Índice de Dunn (`dunn_rowwise_kernel`)
+- **1 bloco por linha/ponto `i`** (256 threads). As coordenadas de `i` são carregadas em *shared memory* (`s_xi`) e reusadas por todas as threads do bloco.
+- Threads varrem os pontos `j` (grid-stride), calculam `d(i,j)` na hora e acumulam **máximo intra-cluster** e **mínimo inter-cluster** locais.
+- **Redução em árvore** em *shared memory*; a CPU faz só a redução global $O(N)$.
 
-### B. Índice de Dunn (`dunn_reduction_kernel`)
-- **Shared Memory:** Cada bloco de 256 threads manipula uma linha da matriz.
-- **Redução:** As threads acumulam localmente em memória compartilhada os valores de maior distância intra-cluster e menor inter-cluster daquela linha e realizam redução em árvore. A CPU faz a redução final de complexidade $O(N)$.
+### B. Coeficiente de Silhueta (`silhouette_rowwise_kernel`)
+- **Shared Memory Dinâmica** (`blockDim.x * K` **doubles**) acumula a soma de `d(i,j)` por cluster (distâncias on-the-fly).
+- Redução paralela por cluster; a thread 0 calcula a silhueta local $s_i$.
 
-### C. Coeficiente de Silhueta (`silhouette_kernel`)
-- **Shared Memory Dinâmica:** Aloca dinamicamente `blockDim.x * K` doubles para acumular as somas de distância de cada ponto aos $K$ clusters.
-- Realiza redução paralela para condensar os valores das threads e calcular a silhueta local $s_i$ no dispositivo.
+### C. Davies-Bouldin
+- **Operações Atômicas:** `atomicAdd` no Device (com fallback CAS para `double` em arquiteturas < sm_60) para centróides e dispersões. Custo $O(N)$ — mais barato que Dunn/Silhueta.
 
-### D. Davies-Bouldin
-- **Operações Atômicas:** Usa `atomicAdd` no Device com fallback de segurança para tipos `double` em arquiteturas mais antigas que Kepler/Maxwell (usando CAS - Compare-And-Swap).
-- O cálculo da razão $R_{ij}$ é resolvido em paralelo com um thread por cluster.
+### D. Precisão (trade-off velocidade × exatidão)
+- Padrão `double` (validado). Compile com `-DUSE_FLOAT` para usar `float` nas distâncias (mais rápido na T4); os **somatórios/reduções acumulam sempre em `double`**.
 
 ---
 
@@ -75,6 +74,9 @@ Os testes foram executados comparando a CPU sequencial (executada no Host local)
 - **Índice de Dunn:** Como o `scikit-learn` não implementa Dunn de forma nativa, criamos um **Caso Analítico de Teste** com 4 pontos espaciais em 2 clusters de diâmetros conhecidos. O Dunn teórico esperado é de exatamente `2.000000`. Tanto a CPU quanto a GPU obtiveram `2.000000` (Erro = $0.00e+00$), descartando qualquer possibilidade de bugs espelhados.
 
 ### B. Tabela Comparativa de Performance
+
+> ⚠️ **Nota:** a tabela abaixo é da **Etapa 2** (versão com matriz N×N), limitada a N=8000. A versão **final matrix-free + OpenMP** produz números diferentes e escala até **N=100.000** — rode `benchmark.py` no Colab e use a tabela gerada em **`resultados_benchmark.csv`** (com média ± desvio e as três curvas CPU-1/CPU-OpenMP/GPU).
+
 | Tamanho ($N$) | Tempo CPU ($s$) | Tempo GPU ($s$) | Speed-up ($x$) | Corretude (Dunn/Silh/DB Match) |
 | :---: | :---: | :---: | :---: | :---: |
 | 250 | 0.0010 s | 0.0012 s | 0.87x | SIM (100% Match contra Sklearn/Teórico) |
@@ -93,6 +95,8 @@ Qualquer IA ou revisor pode auditar os resultados executando o script `benchmark
 1. Faça o upload deste diretório para o ambiente.
 2. Execute o comando: `python benchmark.py`.
 3. O script:
-   - Compilará os códigos locais.
-   - Executará a validação do Dunn analítico e das demais métricas contra `scikit-learn` (interrompe a execução caso haja divergência numérica).
-   - Rodará os benchmarks para os tamanhos especificados e gerará a tabela e o gráfico de Speed-up final.
+   - Compilará a CPU (`g++ -O3 -fopenmp`) e a GPU (`nvcc`, em `double` e `float`).
+   - Validará o Dunn analítico e Silhueta/DB contra `scikit-learn` (aborta se divergir).
+   - Rodará os benchmarks (até **N=100.000**) com **repetições**, comparando **CPU-1 thread × CPU-OpenMP × GPU**, reportando **média ± desvio**.
+   - Gerará `bench_tempo.png`, `bench_speedup.png`, `bench_breakdown.png` e a tabela `resultados_benchmark.csv`.
+   - Para um teste rápido (sem 50k/100k): `python benchmark.py --max 8000`.

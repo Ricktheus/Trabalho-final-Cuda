@@ -1,0 +1,19 @@
+# Artefatos de build (gerados por g++/nvcc no Colab)
+baseline_cpu
+baseline_cpu.exe
+metrics_cuda_double
+metrics_cuda_float
+metrics_cuda_double.exe
+metrics_cuda_float.exe
+metrics_cuda
+metrics_cuda.exe
+*.o
+*.out
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Dados temporarios gerados pelo benchmark
+temp_*.csv
+temp_data_*.csv

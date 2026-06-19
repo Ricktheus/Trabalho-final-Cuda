@@ -1,3 +1,22 @@
+// ======================================================================
+//  baseline_cpu.cpp  -  Versao MATRIX-FREE (sem materializar a matriz NxN)
+// ----------------------------------------------------------------------
+//  Baseline sequencial/paralelo (CPU) das tres metricas de validacao de
+//  clusters: Indice de Dunn, Coeficiente de Silhueta e Davies-Bouldin.
+//
+//  Mudancas em relacao a versao anterior:
+//    - NAO aloca mais a matriz de distancias D[N*N] (eram 80 GB em N=100k
+//      e havia overflow de int em N*N). As distancias sao recalculadas
+//      on-the-fly -> memoria O(N*D), viabiliza N=50.000/100.000.
+//    - Paralelizacao opcional com OpenMP (compile com -fopenmp). O numero
+//      de threads e controlado pela variavel de ambiente OMP_NUM_THREADS,
+//      permitindo medir CPU 1-thread vs CPU multi-thread vs GPU.
+//
+//  Compilacao:
+//    g++ -O3 -fopenmp baseline_cpu.cpp -o baseline_cpu     (multi-thread)
+//    g++ -O3            baseline_cpu.cpp -o baseline_cpu     (sequencial)
+// ======================================================================
+
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -9,18 +28,19 @@
 #include <limits>
 #include <chrono>
 #include <set>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
-// Estrutura para armazenar os dados lidos do CSV
 struct Dataset {
-    int N; // Número de pontos
-    int D; // Dimensões por ponto
-    int K; // Número de clusters únicos
-    std::vector<double> X; // Coordenadas linearizadas (N * D)
-    std::vector<int> labels; // Rótulos dos pontos (N)
-    std::vector<int> unique_labels; // Rótulos únicos ordenados
+    int N;
+    int D;
+    int K;
+    std::vector<double> X;
+    std::vector<int> labels;
+    std::vector<int> unique_labels;
 };
 
-// Carrega o dataset de um arquivo formatado
 Dataset load_dataset(const std::string& filepath) {
     Dataset ds;
     std::ifstream file(filepath);
@@ -30,13 +50,12 @@ Dataset load_dataset(const std::string& filepath) {
     }
 
     std::string line;
-    // Primeira linha: N D K
     if (std::getline(file, line)) {
         std::stringstream ss(line);
         ss >> ds.N >> ds.D >> ds.K;
     }
 
-    ds.X.resize(ds.N * ds.D);
+    ds.X.resize((size_t)ds.N * ds.D);
     ds.labels.resize(ds.N);
 
     std::set<int> label_set;
@@ -47,14 +66,13 @@ Dataset load_dataset(const std::string& filepath) {
         }
         std::stringstream ss(line);
         for (int d = 0; d < ds.D; ++d) {
-            ss >> ds.X[i * ds.D + d];
+            ss >> ds.X[(size_t)i * ds.D + d];
         }
         ss >> ds.labels[i];
         label_set.insert(ds.labels[i]);
     }
 
     ds.unique_labels.assign(label_set.begin(), label_set.end());
-    // Mapeia os labels para 0..K-1
     for (int i = 0; i < ds.N; ++i) {
         auto it = std::find(ds.unique_labels.begin(), ds.unique_labels.end(), ds.labels[i]);
         ds.labels[i] = std::distance(ds.unique_labels.begin(), it);
@@ -63,44 +81,33 @@ Dataset load_dataset(const std::string& filepath) {
     return ds;
 }
 
-// Calcula a matriz de distâncias euclidianas par-a-par O(N^2)
-std::vector<double> compute_pairwise_distances(const Dataset& ds) {
-    std::vector<double> D_mat(ds.N * ds.N, 0.0);
-    for (int i = 0; i < ds.N; ++i) {
-        for (int j = i; j < ds.N; ++j) {
-            if (i == j) {
-                D_mat[i * ds.N + j] = 0.0;
-                continue;
-            }
-            double sum = 0.0;
-            for (int d = 0; d < ds.D; ++d) {
-                double diff = ds.X[i * ds.D + d] - ds.X[j * ds.D + d];
-                sum += diff * diff;
-            }
-            double dist = std::sqrt(sum);
-            D_mat[i * ds.N + j] = dist;
-            D_mat[j * ds.N + i] = dist; // Simétrica
-        }
+// Distancia euclidiana on-the-fly entre os pontos i e j
+static inline double dist_ij(const Dataset& ds, int i, int j) {
+    double sum = 0.0;
+    const double* xi = &ds.X[(size_t)i * ds.D];
+    const double* xj = &ds.X[(size_t)j * ds.D];
+    for (int d = 0; d < ds.D; ++d) {
+        double diff = xi[d] - xj[d];
+        sum += diff * diff;
     }
-    return D_mat;
+    return std::sqrt(sum);
 }
 
-// 1) Índice de Dunn
-double compute_dunn_index(const Dataset& ds, const std::vector<double>& D_mat) {
+// 1) Indice de Dunn (matrix-free)
+double compute_dunn_index(const Dataset& ds) {
     double max_intra = 0.0;
     double min_inter = std::numeric_limits<double>::infinity();
 
+    #pragma omp parallel for schedule(dynamic, 64) \
+            reduction(max:max_intra) reduction(min:min_inter)
     for (int i = 0; i < ds.N; ++i) {
+        int li = ds.labels[i];
         for (int j = i + 1; j < ds.N; ++j) {
-            double dist = D_mat[i * ds.N + j];
-            if (ds.labels[i] == ds.labels[j]) {
-                if (dist > max_intra) {
-                    max_intra = dist;
-                }
+            double dist = dist_ij(ds, i, j);
+            if (li == ds.labels[j]) {
+                if (dist > max_intra) max_intra = dist;
             } else {
-                if (dist < min_inter) {
-                    min_inter = dist;
-                }
+                if (dist < min_inter) min_inter = dist;
             }
         }
     }
@@ -109,111 +116,85 @@ double compute_dunn_index(const Dataset& ds, const std::vector<double>& D_mat) {
     return min_inter / max_intra;
 }
 
-// 2) Coeficiente de Silhueta
-double compute_silhouette_index(const Dataset& ds, const std::vector<double>& D_mat) {
+// 2) Coeficiente de Silhueta (matrix-free)
+double compute_silhouette_index(const Dataset& ds) {
     std::vector<int> cluster_sizes(ds.K, 0);
-    for (int i = 0; i < ds.N; ++i) {
-        cluster_sizes[ds.labels[i]]++;
-    }
+    for (int i = 0; i < ds.N; ++i) cluster_sizes[ds.labels[i]]++;
 
     double silhouette_sum = 0.0;
 
+    #pragma omp parallel for schedule(dynamic, 64) reduction(+:silhouette_sum)
     for (int i = 0; i < ds.N; ++i) {
         int own_cluster = ds.labels[i];
-        if (cluster_sizes[own_cluster] <= 1) {
-            // Se o cluster possui apenas 1 elemento, a silhueta desse ponto é 0 por definição
-            continue;
-        }
+        if (cluster_sizes[own_cluster] <= 1) continue;
 
-        // Calcula a soma de distâncias para cada cluster
         std::vector<double> dist_sum(ds.K, 0.0);
         for (int j = 0; j < ds.N; ++j) {
-            dist_sum[ds.labels[j]] += D_mat[i * ds.N + j];
+            if (j == i) continue;
+            dist_sum[ds.labels[j]] += dist_ij(ds, i, j);
         }
 
-        // Distância média intra-cluster (a_i)
-        // Nota: subtrai a distância de i para ele mesmo (que é 0), e divide por size - 1
         double a = dist_sum[own_cluster] / (cluster_sizes[own_cluster] - 1);
-
-        // Menor distância média inter-cluster (b_i)
         double b = std::numeric_limits<double>::infinity();
         for (int c = 0; c < ds.K; ++c) {
             if (c == own_cluster) continue;
             if (cluster_sizes[c] == 0) continue;
             double avg_dist = dist_sum[c] / cluster_sizes[c];
-            if (avg_dist < b) {
-                b = avg_dist;
-            }
+            if (avg_dist < b) b = avg_dist;
         }
-
-        double s_i = (b - a) / std::max(a, b);
-        silhouette_sum += s_i;
+        silhouette_sum += (b - a) / std::max(a, b);
     }
 
     return silhouette_sum / ds.N;
 }
 
-// 3) Índice Davies-Bouldin
+// 3) Indice Davies-Bouldin (baseado em centroides; ja era O(N))
 double compute_davies_bouldin_index(const Dataset& ds) {
-    // 1. Calcular centroides
-    std::vector<double> centroids(ds.K * ds.D, 0.0);
+    std::vector<double> centroids((size_t)ds.K * ds.D, 0.0);
     std::vector<int> cluster_sizes(ds.K, 0);
 
     for (int i = 0; i < ds.N; ++i) {
         int c = ds.labels[i];
         cluster_sizes[c]++;
         for (int d = 0; d < ds.D; ++d) {
-            centroids[c * ds.D + d] += ds.X[i * ds.D + d];
+            centroids[(size_t)c * ds.D + d] += ds.X[(size_t)i * ds.D + d];
         }
     }
-
     for (int c = 0; c < ds.K; ++c) {
         if (cluster_sizes[c] > 0) {
-            for (int d = 0; d < ds.D; ++d) {
-                centroids[c * ds.D + d] /= cluster_sizes[c];
-            }
+            for (int d = 0; d < ds.D; ++d) centroids[(size_t)c * ds.D + d] /= cluster_sizes[c];
         }
     }
 
-    // 2. Calcular dispersão interna S_i (distância média dos pontos ao centroide do cluster)
     std::vector<double> S(ds.K, 0.0);
     for (int i = 0; i < ds.N; ++i) {
         int c = ds.labels[i];
         double sum_sq = 0.0;
         for (int d = 0; d < ds.D; ++d) {
-            double diff = ds.X[i * ds.D + d] - centroids[c * ds.D + d];
+            double diff = ds.X[(size_t)i * ds.D + d] - centroids[(size_t)c * ds.D + d];
             sum_sq += diff * diff;
         }
         S[c] += std::sqrt(sum_sq);
     }
-
     for (int c = 0; c < ds.K; ++c) {
-        if (cluster_sizes[c] > 0) {
-            S[c] /= cluster_sizes[c];
-        }
+        if (cluster_sizes[c] > 0) S[c] /= cluster_sizes[c];
     }
 
-    // 3. Calcular a razão R_ij e encontrar o pior caso para cada cluster i
     double db_sum = 0.0;
     for (int i = 0; i < ds.K; ++i) {
         if (cluster_sizes[i] == 0) continue;
         double max_ratio = 0.0;
         for (int j = 0; j < ds.K; ++j) {
             if (i == j || cluster_sizes[j] == 0) continue;
-
-            // Distância entre centroides i e j
             double sum_sq = 0.0;
             for (int d = 0; d < ds.D; ++d) {
-                double diff = centroids[i * ds.D + d] - centroids[j * ds.D + d];
+                double diff = centroids[(size_t)i * ds.D + d] - centroids[(size_t)j * ds.D + d];
                 sum_sq += diff * diff;
             }
             double M_ij = std::sqrt(sum_sq);
-
             if (M_ij > 0.0) {
                 double ratio = (S[i] + S[j]) / M_ij;
-                if (ratio > max_ratio) {
-                    max_ratio = ratio;
-                }
+                if (ratio > max_ratio) max_ratio = ratio;
             }
         }
         db_sum += max_ratio;
@@ -230,43 +211,32 @@ int main(int argc, char* argv[]) {
 
     std::string filepath = argv[1];
     bool run_all = true;
-    if (argc >= 3) {
-        run_all = (std::stoi(argv[2]) == 0);
-    }
+    if (argc >= 3) run_all = (std::stoi(argv[2]) == 0);
 
-    // Medição de tempo total incluindo carregamento e computação
+    int n_threads = 1;
+#ifdef _OPENMP
+    n_threads = omp_get_max_threads();
+#endif
+
     auto t_start = std::chrono::high_resolution_clock::now();
-
     Dataset ds = load_dataset(filepath);
-
     auto t_load = std::chrono::high_resolution_clock::now();
     double load_time = std::chrono::duration<double>(t_load - t_start).count();
 
-    // 1. Matriz de distâncias
-    auto t_dist_start = std::chrono::high_resolution_clock::now();
-    std::vector<double> D_mat = compute_pairwise_distances(ds);
-    auto t_dist_end = std::chrono::high_resolution_clock::now();
-    double dist_time = std::chrono::duration<double>(t_dist_end - t_dist_start).count();
-
-    // 2. Dunn Index
+    // 1. Dunn
     auto t_dunn_start = std::chrono::high_resolution_clock::now();
-    double dunn = compute_dunn_index(ds, D_mat);
+    double dunn = compute_dunn_index(ds);
     auto t_dunn_end = std::chrono::high_resolution_clock::now();
     double dunn_time = std::chrono::duration<double>(t_dunn_end - t_dunn_start).count();
 
-    double sil = -2.0;
-    double sil_time = 0.0;
-    double db = -1.0;
-    double db_time = 0.0;
+    double sil = -2.0, sil_time = 0.0, db = -1.0, db_time = 0.0;
 
     if (run_all) {
-        // 3. Silhouette Index
         auto t_sil_start = std::chrono::high_resolution_clock::now();
-        sil = compute_silhouette_index(ds, D_mat);
+        sil = compute_silhouette_index(ds);
         auto t_sil_end = std::chrono::high_resolution_clock::now();
         sil_time = std::chrono::duration<double>(t_sil_end - t_sil_start).count();
 
-        // 4. Davies-Bouldin Index
         auto t_db_start = std::chrono::high_resolution_clock::now();
         db = compute_davies_bouldin_index(ds);
         auto t_db_end = std::chrono::high_resolution_clock::now();
@@ -276,17 +246,16 @@ int main(int argc, char* argv[]) {
     auto t_total_end = std::chrono::high_resolution_clock::now();
     double total_time = std::chrono::duration<double>(t_total_end - t_start).count();
 
-    // Output formatado para ser lido facilmente pelo Python script
     std::cout << std::fixed << std::setprecision(8);
     std::cout << "--- RESULTS ---" << std::endl;
     std::cout << "N: " << ds.N << std::endl;
     std::cout << "D: " << ds.D << std::endl;
     std::cout << "K: " << ds.K << std::endl;
+    std::cout << "Threads: " << n_threads << std::endl;
     std::cout << "Dunn: " << dunn << std::endl;
     std::cout << "Silhouette: " << sil << std::endl;
     std::cout << "DB: " << db << std::endl;
     std::cout << "Time_Load: " << load_time << std::endl;
-    std::cout << "Time_Distances: " << dist_time << std::endl;
     std::cout << "Time_Dunn: " << dunn_time << std::endl;
     std::cout << "Time_Silhouette: " << sil_time << std::endl;
     std::cout << "Time_DB: " << db_time << std::endl;
