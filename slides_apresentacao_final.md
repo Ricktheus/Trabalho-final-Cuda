@@ -39,7 +39,6 @@ style: |
 **Equipe:**
 - Henrique M. M. Miranda — 202405479
 - Cindy Stephanie Gomes Rabelo — 202403898
-- Eduardo Dias Peixoto — 202010395
 - Luiany Goncalves Carvalho — 202303351
 
 **Disciplina:** Computação de Alto Desempenho · **Prof.:** Ricardo Augusto Pereira Franco
@@ -288,7 +287,7 @@ ao artigo-base (amostragem) como caminho para milhões de pontos. -->
 # Obrigado!
 ## Perguntas?
 
-**Equipe:** Henrique Miranda · Cindy Rabelo · Eduardo Peixoto · Luiany Carvalho
+**Equipe:** Henrique Miranda · Cindy Rabelo · Luiany Carvalho
 
 *Computação de Alto Desempenho — UFG / Instituto de Informática*
 
