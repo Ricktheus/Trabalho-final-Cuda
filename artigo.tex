@@ -395,11 +395,11 @@ Silhueta --- as métricas que dependem de distâncias par-a-par ---
 concentram \textbf{$\approx 99{,}95\%$} desse tempo de \emph{kernel} (em
 $N=100.000$, $1{,}62$~s e $1{,}49$~s, respectivamente), enquanto
 Davies-Bouldin e a transferência \emph{Host-to-Device} (H2D) são
-desprezíveis ($<0{,}001$~s). A soma das etapas ($\approx 3{,}11$~s) é
-ligeiramente inferior ao tempo total de GPU da Tabela~\ref{tab:resultados}
-($3{,}24$~s): a diferença de $\approx 0{,}12$~s ($\approx 3{,}7\%$)
-corresponde a \emph{overhead} fora dessas etapas (alocações, \emph{kernel}
-do caso analítico, cópias \emph{Device-to-Host} e reduções no \emph{host}).
+desprezíveis ($<0{,}001$~s). A soma das quatro etapas ($\approx 3{,}11$~s) é
+inferior ao tempo total reportado na Tabela~\ref{tab:resultados} ($3{,}24$~s)
+porque este último inclui ainda o tempo de \textbf{leitura do \emph{dataset}
+no \emph{host}} ($\approx 0{,}12$~s em $N=100.000$, ou $\approx 3{,}7\%$), que
+não é uma etapa de GPU e por isso não figura na decomposição.
 Esse resultado tem implicação prática direta: como as transferências são
 mínimas na formulação \emph{matrix-free}, técnicas de sobreposição de cópia
 e computação (CUDA \emph{streams}) trariam ganho irrelevante neste caso ---
