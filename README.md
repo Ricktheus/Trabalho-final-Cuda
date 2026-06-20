@@ -73,7 +73,7 @@ Para garantir um benchmark real e reprodutível, os dados de teste são gerados 
 Os testes finais comparam **CPU 1-thread**, **CPU OpenMP** e **GPU** (NVIDIA T4), todas executadas na **mesma máquina** (Google Colab) — o que torna o speed-up justo. *Ressalva:* as 2 vCPUs do Colab dividem 1 núcleo físico, então o OpenMP acelera pouco em N grande (~1,02× sobre 1 thread).
 
 ### A. Ground Truth contra referências externas:
-- **Silhueta e Davies-Bouldin:** O script `benchmark.py` executa uma validação rigorosa comparando nossos resultados de CPU e GPU contra o **scikit-learn** original para $N=150$ (Iris). Obtivemos erro absoluto residual de apenas $\sim 2.28 \times 10^{-9}$ (limite de precisão de ponto flutuante em double), confirmando que a lógica matemática é 100% fiel à biblioteca canônica.
+- **Silhueta e Davies-Bouldin:** O script `benchmark.py` executa uma validação rigorosa comparando nossos resultados de CPU e GPU contra o **scikit-learn** original para um conjunto `make_blobs` de $N=150$ (`benchmark.py:151`). Obtivemos erro absoluto residual de apenas $\sim 2.28 \times 10^{-9}$ (limite de precisão de ponto flutuante em double), confirmando que a lógica matemática é 100% fiel à biblioteca canônica.
 - **Índice de Dunn:** Como o `scikit-learn` não implementa Dunn de forma nativa, criamos um **Caso Analítico de Teste** com 4 pontos espaciais em 2 clusters de diâmetros conhecidos. O Dunn teórico esperado é de exatamente `2.000000`. Tanto a CPU quanto a GPU obtiveram `2.000000` (Erro = $0.00e+00$), descartando qualquer possibilidade de bugs espelhados.
 
 ### B. Tabela Comparativa de Performance

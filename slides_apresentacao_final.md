@@ -176,7 +176,7 @@ que a GPU bate o MELHOR caso de CPU disponível (~24x). -->
 ## 9. Validação Numérica Rigorosa (3 camadas)
 
 1. **Caso analítico do Dunn:** 4 pontos com Dunn teórico = **2.0**. CPU e GPU obtêm **2.000000** (erro 0).
-2. **Ground truth (scikit-learn):** Silhueta e DB no Iris (N=150) batem com o `scikit-learn` com erro **~10⁻⁹**.
+2. **Ground truth (scikit-learn):** Silhueta e DB em `make_blobs(N=150)` batem com o `scikit-learn` com erro **~10⁻⁹**.
 3. **Equivalência CPU ≡ GPU:** em todos os tamanhos do benchmark, as três métricas coincidem (tolerância 10⁻⁵).
 
 > A corretude é **pré-condição**: o `benchmark.py` **aborta** se qualquer camada divergir.
