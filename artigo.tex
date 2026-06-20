@@ -191,9 +191,11 @@ $M_{ij}=\|\mu_i-\mu_j\|$ a distância entre centróides. Valores
 não dependendo das distâncias par-a-par.
 
 \subsection{O gargalo de complexidade}
-Dunn e Silhueta exigem todas as $N(N-1)/2$ distâncias par-a-par, levando a
-um custo de tempo $O(N^2 D)$. Para $N=100.000$, isso significa da ordem de
-$10^{10}$ avaliações de distância. Além do tempo, a abordagem ingênua que
+Dunn e Silhueta exigem todas as $N(N-1)/2$ distâncias par-a-par
+($\approx 5\times10^{9}$ pares distintos para $N=100.000$), levando a um
+custo de tempo $O(N^2 D)$; como na formulação \emph{matrix-free} cada
+distância é recomputada sob demanda, isso equivale a $\sim\!10^{10}$
+avaliações de distância. Além do tempo, a abordagem ingênua que
 \emph{armazena} a matriz de distâncias $D \in \mathbb{R}^{N\times N}$
 incorre em custo de \textbf{memória} $O(N^2)$ --- proibitivo, como
 detalhado na Seção~\ref{sec:matrixfree}.
@@ -236,12 +238,13 @@ execução sequencial (1 \emph{thread}) quanto a paralela.
 \label{sec:matrixfree}
 A decisão de projeto central deste trabalho é \textbf{não armazenar} a
 matriz de distâncias. Em precisão dupla, ela ocuparia $N^2 \times 8$ bytes,
-conforme a Tabela~\ref{tab:memoria}; para $N=50.000$ já excede a memória da
-GPU utilizada (16~GB) e, para $N=100.000$, excederia também a memória
-principal, além de provocar \emph{overflow} de inteiro no índice $N\cdot N$.
+conforme a Tabela~\ref{tab:memoria}: para $N=50.000$ (20~GB) já excede tanto
+a memória da GPU utilizada (16~GB) quanto os $\approx\!12$~GB de RAM do
+ambiente, e para $N=100.000$ (80~GB) torna-se totalmente inviável --- além
+de ultrapassar o limite de indexação por inteiro de 32 bits em $N\cdot N$.
 Recomputando as distâncias sob demanda dentro dos \emph{kernels}, a memória
-cai para $O(N\cdot D)$ (poucos megabytes), ao custo de recalcular algumas
-distâncias --- troca amplamente vantajosa, pois é o que viabiliza a escala.
+cai para $O(N\cdot D)$ (poucos megabytes), ao custo de recalcular distâncias
+--- troca amplamente vantajosa, pois é o que viabiliza a escala.
 
 \begin{table}[ht]
 \centering
@@ -252,7 +255,7 @@ distâncias --- troca amplamente vantajosa, pois é o que viabiliza a escala.
 $N$ & Matriz $N\times N$ & Cabe na GPU (16~GB)? \\
 \midrule
 8.000 & 0,5 GB & Sim \\
-32.000 & 8,2 GB & Sim (limite) \\
+32.000 & 8,2 GB & Sim \\
 50.000 & 20 GB & \textbf{Não} \\
 100.000 & 80 GB & \textbf{Não} \\
 \bottomrule
@@ -307,7 +310,8 @@ experimentos foram executados no Google Colab com GPU \textbf{NVIDIA Tesla
 T4} (16~GB) e CPU de 2 \emph{vCPUs}; CPU e GPU compartilham a mesma máquina,
 tornando a comparação de \emph{speed-up} justa. Cada medição é a
 \textbf{média de múltiplas repetições} (5 para $N\le 8000$, 3 para
-$N\le 32000$ e 2 para os maiores), reportada com desvio-padrão. Compilação:
+$N\le 32000$ e 2 para os maiores); o desvio-padrão correspondente acompanha
+o código-fonte e é usado na discussão de significância. Compilação:
 \texttt{g++ -O3 -fopenmp} (CPU) e \texttt{nvcc -O3} (GPU). O código completo
 está disponível publicamente\footnote{\url{https://github.com/Ricktheus/Trabalho-final-Cuda}}.
 
@@ -385,11 +389,17 @@ contra a CPU sequencial e a CPU OpenMP.}
 \end{figure}
 
 \subsection{Decomposição do tempo de GPU (\emph{breakdown})}
-A Figura~\ref{fig:breakdown} decompõe o tempo de GPU por etapa. Dunn e
+A Figura~\ref{fig:breakdown} decompõe o tempo de GPU nas \textbf{quatro
+etapas instrumentadas} (H2D, Dunn, Silhueta e Davies-Bouldin). Dunn e
 Silhueta --- as métricas que dependem de distâncias par-a-par ---
-concentram \textbf{$\approx 99{,}95\%$} do tempo (em $N=100.000$,
-$1{,}62$~s e $1{,}49$~s, respectivamente), enquanto Davies-Bouldin e a
-transferência \emph{Host-to-Device} (H2D) são desprezíveis ($<0{,}001$~s).
+concentram \textbf{$\approx 99{,}95\%$} desse tempo de \emph{kernel} (em
+$N=100.000$, $1{,}62$~s e $1{,}49$~s, respectivamente), enquanto
+Davies-Bouldin e a transferência \emph{Host-to-Device} (H2D) são
+desprezíveis ($<0{,}001$~s). A soma das etapas ($\approx 3{,}11$~s) é
+ligeiramente inferior ao tempo total de GPU da Tabela~\ref{tab:resultados}
+($3{,}24$~s): a diferença de $\approx 0{,}12$~s ($\approx 3{,}7\%$)
+corresponde a \emph{overhead} fora dessas etapas (alocações, \emph{kernel}
+do caso analítico, cópias \emph{Device-to-Host} e reduções no \emph{host}).
 Esse resultado tem implicação prática direta: como as transferências são
 mínimas na formulação \emph{matrix-free}, técnicas de sobreposição de cópia
 e computação (CUDA \emph{streams}) trariam ganho irrelevante neste caso ---
@@ -404,10 +414,18 @@ o problema é \emph{compute-bound}.
 \end{figure}
 
 \subsection{Discussão}
-Três aspectos merecem destaque. Primeiro, o \emph{speed-up} permanece
-expressivo mesmo contra a \textbf{CPU paralela} (OpenMP), o que reforça a
-validade científica do resultado --- não se trata de comparar a GPU apenas
-com um único núcleo. Segundo, os ganhos são \textbf{conservadores}: a T4 é
+Três aspectos merecem destaque. Primeiro, o \emph{speed-up} foi medido
+também contra a \textbf{CPU paralela} (OpenMP), e não apenas contra um único
+núcleo. Cabe a ressalva de que as 2 \emph{vCPUs} do Google Colab
+compartilham um mesmo núcleo físico (dois \emph{hyperthreads}): para uma
+carga \emph{compute-bound} como esta, o OpenMP quase não acelera em $N$
+grande ($80{,}61\pm1{,}17$~s contra $79{,}23\pm1{,}78$~s em $N=100.000$, um
+ganho de apenas $\approx\!1{,}02\times$, dentro do desvio-padrão), o que
+aproxima SU$_1$ e SU$_\Omega$. O resultado robusto, portanto, é que mesmo o
+\emph{melhor} desempenho de CPU disponível na plataforma permanece
+$\approx\!24\times$ atrás da GPU; aferir o \emph{speedup} de escalabilidade
+forte do OpenMP exigiria uma CPU com mais núcleos físicos. Segundo, os
+ganhos são \textbf{conservadores}: a T4 é
 particularmente fraca em precisão dupla, de modo que GPUs de maior porte
 elevariam substancialmente o \emph{speed-up}. Terceiro, em relação ao
 artigo-base~\cite{ncir2021}, nossa abordagem é \textbf{exata} (sem

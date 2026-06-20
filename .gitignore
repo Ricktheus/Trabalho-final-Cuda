@@ -10,6 +10,14 @@ metrics_cuda.exe
 *.o
 *.out
 
+# Artefatos de build do LaTeX
+*.aux
+*.log
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
 # Cache Python
 __pycache__/
 *.pyc
