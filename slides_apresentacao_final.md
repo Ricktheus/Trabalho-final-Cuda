@@ -164,10 +164,12 @@ reduzida na hora, economizando banda de memória global. -->
 - Threads controladas por `OMP_NUM_THREADS` → permite medir **CPU 1-thread** e **CPU multi-thread**.
 - Resultado: comparamos **três motores** — CPU-1, CPU-OMP e GPU — todos no **mesmo ambiente** (Colab).
 
-> Comparar a GPU contra **1 thread** e contra **todos os núcleos** dá robustez científica ao speed-up.
+> Comparar a GPU contra **1 thread** e contra a **CPU paralela (OpenMP)** reforça o speed-up — ainda que, no Colab (**2 vCPUs = 1 núcleo físico**), o OpenMP acelere pouco em N grande (~1,02×).
 
-<!-- Fala: explicar que medir só contra 1 thread infla o ganho; por isso
-incluímos a CPU paralela (OpenMP) como segundo baseline. -->
+<!-- Fala: medir só contra 1 thread infla o ganho; por isso incluímos a CPU
+paralela (OpenMP) como segundo baseline. Mas como as 2 vCPUs do Colab dividem
+1 núcleo físico, o OpenMP quase não acelera em N grande — então o valor real é
+que a GPU bate o MELHOR caso de CPU disponível (~24x). -->
 
 ---
 
@@ -205,7 +207,8 @@ enquanto a GPU cresce muito mais devagar — a distância entre as curvas é o g
 <!--
 Inserir aqui a figura bench_speedup.png.
 Fala: o speed-up cresce com N (mais trabalho = melhor amortização do overhead);
-a curva vs CPU-OpenMP é menor (baseline mais forte) e é a comparação mais honesta.
+a curva vs CPU-OpenMP fica quase colada na vs 1-thread porque, no Colab (2 vCPUs
+= 1 núcleo físico), o OpenMP acelera muito pouco em N grande (~1,02x).
 -->
 
 ---
@@ -214,12 +217,17 @@ a curva vs CPU-OpenMP é menor (baseline mais forte) e é a comparação mais ho
 
 > **[IMAGEM: bench_breakdown.png]**
 > Barras empilhadas do tempo de GPU por etapa: **H2D (cópia)**, **Dunn**, **Silhueta**, **Davies-Bouldin**.
+> **Dunn + Silhueta ≈ 99,9% do tempo de kernel** (4 etapas medidas); H2D e DB são desprezíveis.
 
 <!--
 Inserir aqui a figura bench_breakdown.png.
 Fala: Dunn e Silhueta (O(N^2)) dominam; Davies-Bouldin (O(N)) é desprezível;
 a cópia H2D é mínima (X é pequeno na versão matrix-free) — por isso streams
 de transferência teriam pouco efeito aqui (ver Trabalhos Futuros).
+OBS (denominador): os ~99,9% são fração das 4 ETAPAS MEDIDAS (H2D+Dunn+Silhueta+DB),
+não do total da tabela. O "GPU (s)" da tabela inclui também a leitura do dataset
+no host (~0,12 s em 100k), que não é etapa de GPU; por isso a soma das 4 etapas
+(~3,11 s) fica um pouco abaixo do total (3,24 s).
 -->
 
 ---
@@ -234,7 +242,7 @@ de transferência teriam pouco efeito aqui (ver Trabalhos Futuros).
 | 50.000  | 20,44 | 19,44 | 0,927 | 22,0× | 100% |
 | 100.000 | 80,61 | 79,23 | 3,24  | **24,9×** | 100% |
 
-*Tempos = média ± desvio de várias repetições (T4 no Colab). Tabela completa em `resultados_benchmark.csv`.*
+*Tempos = média de 5 rep. (N≤8k), 3 (até 32k), 2 (50k e 100k); T4 no Colab. Erro vs scikit-learn ≈ 10⁻⁹. Tabela completa (com desvio-padrão) em `resultados_benchmark.csv`.*
 
 - Speed-up máximo de **24,9×** vs CPU-1 e **24,5×** vs CPU-OpenMP, em N=100.000.
 - Corretude **100%** CPU ≡ GPU em todos os tamanhos (e ~10⁻⁹ vs scikit-learn).
@@ -247,8 +255,8 @@ com matriz N×N — e que o ganho cresce com o tamanho do problema. -->
 ## 11. Análise dos Resultados
 
 - **Escalabilidade:** a CPU segue O(N²); a GPU mantém tempos baixos → a distância **aumenta com N**.
-- **Baseline forte:** mesmo contra a **CPU OpenMP** (todos os núcleos), a GPU vence por boa margem.
-- **Gargalo interno:** Dunn e Silhueta concentram o tempo (par-a-par); DB é marginal.
+- **Baseline honesto:** as 2 vCPUs do Colab dividem **1 núcleo físico**, então o OpenMP quase não acelera em N grande (~1,02×); ainda assim, mesmo o **melhor caso de CPU** fica ~24× atrás da GPU — o ganho não é trivial.
+- **Gargalo interno:** Dunn e Silhueta concentram ~99,9% do **tempo de kernel** (4 etapas medidas); DB e H2D são marginais.
 - **Transferência irrelevante:** H2D ≈ 0 na versão matrix-free → o tempo é **compute-bound**.
 - **(Opcional) float × double:** o modo `float` acelera na T4 (fp32 ≫ fp64) com erro controlado — trade-off precisão × velocidade.
 
@@ -287,5 +295,5 @@ ao artigo-base (amostragem) como caminho para milhões de pontos. -->
 <!-- Resumo das conquistas para fechar:
  - matrix-free: O(N^2) -> O(N) de memória, escala a 100k
  - corretude 100% (analítico + sklearn ~1e-9 + CPU≡GPU)
- - speed-up 24,9x vs CPU-1 e 24,5x vs CPU-OpenMP em N=100k
- - breakdown mostra Dunn/Silhueta ~99,97% do tempo; H2D e DB irrelevantes -->
+ - speed-up 24,9x vs CPU-1 e 24,5x vs CPU-OpenMP em N=100k (OpenMP ~1,02x: 2 vCPUs/1 nucleo)
+ - breakdown mostra Dunn/Silhueta ~99,9% do tempo de kernel (4 etapas medidas); H2D e DB irrelevantes -->

@@ -49,7 +49,7 @@ Para garantir um benchmark real e reprodutível, os dados de teste são gerados 
 
 ## 4. Projeto e Otimização dos Kernels CUDA (Matrix-free)
 
-**Decisão central:** a versão final **não materializa** a matriz de distâncias `D[N×N]`. Em N=100.000 essa matriz custaria ~80 GB e estouraria tanto a VRAM da GPU quanto a RAM da CPU (além de causar overflow de `int` em `N*N`). As distâncias são **recalculadas on-the-fly** dentro dos kernels → memória **O(N·D)** em vez de **O(N²)**, viabilizando N=50.000/100.000.
+**Decisão central:** a versão final **não materializa** a matriz de distâncias `D[N×N]`. Já em N=50.000 a matriz custaria 20 GB (> 16 GB da VRAM da T4 **e** > ~12 GB de RAM do Colab); em N=100.000 seriam ~80 GB (impossível), além de causar overflow de `int` de 32 bits em `N*N`. As distâncias são **recalculadas on-the-fly** dentro dos kernels → memória **O(N·D)** em vez de **O(N²)**, viabilizando N=50.000/100.000.
 
 ### A. Índice de Dunn (`dunn_rowwise_kernel`)
 - **1 bloco por linha/ponto `i`** (256 threads). As coordenadas de `i` são carregadas em *shared memory* (`s_xi`) e reusadas por todas as threads do bloco.
@@ -61,7 +61,7 @@ Para garantir um benchmark real e reprodutível, os dados de teste são gerados 
 - Redução paralela por cluster; a thread 0 calcula a silhueta local $s_i$.
 
 ### C. Davies-Bouldin
-- **Operações Atômicas:** `atomicAdd` no Device (com fallback CAS para `double` em arquiteturas < sm_60) para centróides e dispersões. Custo $O(N)$ — mais barato que Dunn/Silhueta.
+- **Operações Atômicas:** `atomicAdd` no Device (com fallback CAS para `double` em arquiteturas < sm_60) para centróides e dispersões. Custo $O(N\cdot D + K^2 D)$ — linear em N (≈$O(N)$ com D, K pequenos), bem mais barato que Dunn/Silhueta.
 
 ### D. Precisão (trade-off velocidade × exatidão)
 - Padrão `double` (validado). Compile com `-DUSE_FLOAT` para usar `float` nas distâncias (mais rápido na T4); os **somatórios/reduções acumulam sempre em `double`**.
@@ -70,7 +70,7 @@ Para garantir um benchmark real e reprodutível, os dados de teste são gerados 
 
 ## 5. Resultados de Auditoria e Validação Rigorosa
 
-Os testes foram executados comparando a CPU sequencial (executada no Host local) e a GPU paralela (NVIDIA T4 executada no ambiente do Google Colab).
+Os testes finais comparam **CPU 1-thread**, **CPU OpenMP** e **GPU** (NVIDIA T4), todas executadas na **mesma máquina** (Google Colab) — o que torna o speed-up justo. *Ressalva:* as 2 vCPUs do Colab dividem 1 núcleo físico, então o OpenMP acelera pouco em N grande (~1,02× sobre 1 thread).
 
 ### A. Ground Truth contra referências externas:
 - **Silhueta e Davies-Bouldin:** O script `benchmark.py` executa uma validação rigorosa comparando nossos resultados de CPU e GPU contra o **scikit-learn** original para $N=150$ (Iris). Obtivemos erro absoluto residual de apenas $\sim 2.28 \times 10^{-9}$ (limite de precisão de ponto flutuante em double), confirmando que a lógica matemática é 100% fiel à biblioteca canônica.

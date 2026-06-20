@@ -129,7 +129,7 @@ A versão antiga (Etapa 2) guardava **todas** as distâncias numa tabela gigante
 >
 > A versão **matrix-free** faz diferente: **não guarda** a tabela; **recalcula** cada distância na hora em que precisa (é rápido multiplicar mentalmente "7×8" do que procurar numa tabela impressa de 80 GB).
 
-**O ganho:** a memória cai de **80 GB** (impossível) para **~3 MB**. É **isso** que destravou os 100.000 pontos. O preço é recalcular algumas distâncias mais de uma vez — uma troca que vale muito a pena.
+**O ganho:** a memória cai de **80 GB** (impossível) para **~3 MB**. É **isso** que destravou os 100.000 pontos. O preço é recalcular distâncias mais de uma vez (no Dunn e na Silhueta, separadamente) — uma troca que vale muito a pena.
 
 ---
 
@@ -137,7 +137,7 @@ A versão antiga (Etapa 2) guardava **todas** as distâncias numa tabela gigante
 
 > 👥 **Analogia da correção de provas:** em vez de **um** professor corrigindo 100 mil provas, **4 professores** dividem a pilha. **OpenMP** é o "modo turma" da CPU: distribui o laço entre os núcleos do processador.
 
-Por que incluímos? Para o speed-up ser **honesto**: comparamos a GPU não só contra **1 núcleo** da CPU, mas contra a **CPU inteira** (todos os núcleos). A GPU vence nos dois casos.
+Por que incluímos? Para o speed-up ser **honesto**: comparamos a GPU não só contra **1 núcleo**, mas contra a CPU usando OpenMP. **Ressalva importante:** o Colab gratuito tem **2 vCPUs que dividem 1 núcleo físico** (*hyperthreads*), então o OpenMP acelera **pouco** em N grande (em 100k, só **~1,02×** sobre 1 thread — dentro do desvio-padrão); por isso SU₁ ≈ SU_Ω. A GPU vence os dois casos por ~24×, e o ponto honesto é que ela bate o **melhor** caso de CPU disponível.
 
 ---
 
@@ -162,7 +162,7 @@ Nossos números finais (T4 no Colab):
 **Três leituras importantes:**
 1. **O speed-up cresce com N.** Em N pequeno (250), a GPU quase empata (1,6×): o tempo de "ligar a multidão" (overhead) domina. Quanto **maior** o problema, **melhor** a GPU amortiza esse custo. É o comportamento esperado e desejável.
 2. **A curva da CPU dispara (O(N²)); a da GPU quase não sobe.** No gráfico linear, em 100k a CPU é uma torre de 80 s ao lado de um tijolinho de 3 s.
-3. **Breakdown:** ~99,97% do tempo da GPU está em **Dunn + Silhueta** (as métricas par-a-par). Davies-Bouldin e a cópia de dados (H2D) são desprezíveis — por isso otimizações de transferência (streams) não ajudariam aqui.
+3. **Breakdown:** ~99,9% do **tempo de kernel** (as 4 etapas medidas: H2D, Dunn, Silhueta, DB) está em **Dunn + Silhueta** (as métricas par-a-par). Davies-Bouldin e a cópia H2D são desprezíveis — por isso otimizações de transferência (streams) não ajudariam. *Obs.: o "GPU (s)" da tabela inclui ainda a **leitura do dataset no host** (~0,12 s em 100k), que não é etapa de GPU; por isso a soma das 4 etapas (~3,11 s) fica um pouco abaixo do total (3,24 s).*
 
 > ⚠️ **Por que o speed-up "caiu" de 33× (Etapa 2) para 25× (final)?** Não é piora — é **honestidade + escala**. A versão antiga só ia até 8.000 e guardava a matriz (calculava distâncias uma vez). A matrix-free **recalcula** distâncias (no Dunn e na Silhueta), então em um N fixo ela é um pouco mais lenta — mas **escala para 100.000**, onde a antiga **nem rodava**. E o speed-up **continua subindo** com N.
 
@@ -195,7 +195,7 @@ Mostrar que você conhece os limites do próprio trabalho passa **maturidade**. 
 1. **Recomputação de distâncias.** Por sermos matrix-free, Dunn e Silhueta calculam as distâncias **separadamente** (recalculam). Um *kernel fundido* (calcular a distância uma vez e alimentar as duas métricas) seria mais rápido. Ficou como trabalho futuro.
 2. **Dados sintéticos.** Testamos com `make_blobs` (nuvens gaussianas bem-comportadas). Faltam dados reais e clusters de formato difícil (alongados, densidades diferentes).
 3. **Comparação contra CPU.** O baseline é uma CPU; o ideal científico seria comparar também com **outra implementação GPU** (ex.: a abordagem do artigo) — mas o enunciado pede baseline a ser superado, e cumprimos.
-4. **Só 2 núcleos no Colab.** O OpenMP ganhou pouco porque o Colab gratuito tem ~2 vCPUs. Numa CPU de 8–16 núcleos o baseline OpenMP seria mais forte (e o speed-up da GPU, menor).
+4. **Só 2 vCPUs no Colab (1 núcleo físico).** As 2 vCPUs são *hyperthreads* de um mesmo núcleo, então o OpenMP quase não acelera em N grande (**~1,02×** sobre 1 thread em 100k — dentro do desvio-padrão). Numa CPU de 8–16 **núcleos físicos** o baseline OpenMP seria bem mais forte (e o speed-up da GPU, menor).
 5. **`double` na T4.** A T4 é fraca em `double`; numa GPU melhor (A100/H100) o speed-up seria **muito** maior. Ou seja, nossos 25× são **conservadores**.
 6. **Silhueta e K grande.** A memória compartilhada cresce com `256 × K`. Para K muito grande (dezenas/centenas de clusters), o kernel precisaria de outra estratégia.
 7. **Escala "real" de Big Data.** Chegamos a 100.000 (limitado por **tempo**, não mais por memória). Milhões de pontos exigiriam multi-GPU ou a **amostragem** do artigo. O discurso de "Big Data" deve reconhecer isso.
@@ -212,7 +212,7 @@ R: A razão entre a menor separação entre clusters e o maior diâmetro interno
 R: Porque Dunn e Silhueta dependem da distância de cada ponto a todos os outros — ~N²/2 pares.
 
 **P: Por que GPU e não só CPU paralela?**
-R: A GPU tem milhares de núcleos para continhas simples e independentes (distâncias). Mesmo contra a CPU usando todos os núcleos (OpenMP), a GPU foi ~24× mais rápida em 100k.
+R: A GPU tem milhares de núcleos para continhas simples e independentes (distâncias). Mesmo contra a CPU com OpenMP, a GPU foi ~24× mais rápida em 100k. (Ressalva honesta: o Colab só tem 2 vCPUs/1 núcleo físico, então o OpenMP acelera pouco — ~1,02×; numa CPU com mais núcleos a margem cairia, mas a GPU ainda venceria.)
 
 **P: Como vocês conseguiram rodar 100.000 pontos?**
 R: Eliminando a matriz N×N (matrix-free): calculamos as distâncias on-the-fly, reduzindo a memória de 80 GB para ~3 MB.
