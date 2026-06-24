@@ -127,7 +127,27 @@ real de escala; eliminá-la é o que destrava 100 mil pontos. -->
 
 ---
 
-## 6. Metodologia Paralela — A) Índice de Dunn
+## 6. Dados e Ambiente Experimental
+
+**Dataset (sintético, reprodutível):** gerado com `make_blobs` (scikit-learn) — nuvens gaussianas.
+- **D = 4** dimensões · **K = 5** clusters · `cluster_std = 1.0` · `random_state = 42` (sempre os mesmos dados).
+- **N varrendo de 250 até 100.000** pontos (10 tamanhos) → permite medir **escalabilidade**.
+- Formato de entrada `.csv`: 1ª linha `N D K`; depois `x_1 … x_D label`.
+
+**Ambiente (Google Colab):**
+- **GPU:** NVIDIA **T4** (16 GB) · compilada com `nvcc -O3 -arch=sm_60`.
+- **CPU:** **2 vCPUs** · baseline `g++ -O3 -fopenmp`.
+- **Medição:** cada ponto é **média ± desvio** de **N repetições** (mais repetições para N pequeno).
+
+> Dados sintéticos garantem **reprodutibilidade** e controle de D/K/N; a limitação (faltam dados reais) é discutida no slide final.
+
+<!-- Fala: explicar que usamos blobs gaussianos porque dão controle total sobre
+N, D e K e são 100% reprodutíveis (seed fixa). Deixar claro que a CPU do Colab
+tem só 2 vCPUs — isso é importante para interpretar o baseline OpenMP. -->
+
+---
+
+## 7. Metodologia Paralela — A) Índice de Dunn
 
 - **1 bloco por linha/ponto `i`** (256 threads/bloco).
 - Coordenadas de `i` carregadas em **memória compartilhada** (`s_xi`) e reusadas por todas as threads.
@@ -143,7 +163,7 @@ reduzida na hora, economizando banda de memória global. -->
 
 ---
 
-## 7. Metodologia Paralela — B) Silhueta e Davies-Bouldin
+## 8. Metodologia Paralela — B) Silhueta e Davies-Bouldin
 
 **Coeficiente de Silhueta** (`silhouette_rowwise_kernel`):
 - 1 bloco por ponto; **memória compartilhada dinâmica** `blockDim × K` (em **double**).
@@ -157,24 +177,27 @@ reduzida na hora, economizando banda de memória global. -->
 
 ---
 
-## 8. Baseline em CPU (comparação justa)
+## 9. Baseline em CPU (comparação justa)
 
 - Mesmo algoritmo **matrix-free** em C++ (`baseline_cpu.cpp`) → comparação **simétrica** com a GPU.
 - **Paralelização OpenMP** (`#pragma omp parallel for` com `reduction(max/min/+)`).
-- Threads controladas por `OMP_NUM_THREADS` → permite medir **CPU 1-thread** e **CPU multi-thread**.
+- Threads controladas por `OMP_NUM_THREADS` → medimos **CPU 1-thread** e **CPU com todos os núcleos** (no Colab, **2 vCPUs**).
 - Resultado: comparamos **três motores** — CPU-1, CPU-OMP e GPU — todos no **mesmo ambiente** (Colab).
 
-> Comparar a GPU contra **1 thread** e contra **todos os núcleos** dá robustez científica ao speed-up.
+> **Ressalva honesta:** com apenas 2 vCPUs (e provável contenção/throttling do Colab nas execuções longas), o OpenMP ganha pouco em N grande — ainda assim a GPU vence **os dois** baselines por larga margem.
 
-<!-- Fala: explicar que medir só contra 1 thread infla o ganho; por isso
-incluímos a CPU paralela (OpenMP) como segundo baseline. -->
+<!-- Fala: medir só contra 1 thread inflaria o ganho; por isso incluímos a CPU
+paralela. Mas seja transparente: o Colab gratuito dá só 2 vCPUs, então o OpenMP
+satura rápido — em N=100k ele praticamente empata com 1 thread (80,6s vs 79,2s).
+Se a banca perguntar "por que seu OpenMP não escala?", a resposta é: 2 núcleos
+compartilhados + possível throttling; o foco do trabalho é o ganho da GPU. -->
 
 ---
 
-## 9. Validação Numérica Rigorosa (3 camadas)
+## 10. Validação Numérica Rigorosa (3 camadas)
 
 1. **Caso analítico do Dunn:** 4 pontos com Dunn teórico = **2.0**. CPU e GPU obtêm **2.000000** (erro 0).
-2. **Ground truth (scikit-learn):** Silhueta e DB no Iris (N=150) batem com o `scikit-learn` com erro **~10⁻⁹**.
+2. **Ground truth (scikit-learn):** Silhueta e DB num conjunto sintético de **N=150** (formato do Iris: 150×4, 3 classes) batem com o `scikit-learn` com erro **~10⁻⁹**.
 3. **Equivalência CPU ≡ GPU:** em todos os tamanhos do benchmark, as três métricas coincidem (tolerância 10⁻⁵).
 
 > A corretude é **pré-condição**: o `benchmark.py` **aborta** se qualquer camada divergir.
@@ -205,7 +228,8 @@ enquanto a GPU cresce muito mais devagar — a distância entre as curvas é o g
 <!--
 Inserir aqui a figura bench_speedup.png.
 Fala: o speed-up cresce com N (mais trabalho = melhor amortização do overhead);
-a curva vs CPU-OpenMP é menor (baseline mais forte) e é a comparação mais honesta.
+a curva vs CPU-OpenMP fica logo abaixo da vs CPU-1 — e quase coladas em N grande,
+porque o OpenMP de 2 vCPUs satura e ganha pouco do 1-thread (ver slide 9).
 -->
 
 ---
@@ -224,17 +248,17 @@ de transferência teriam pouco efeito aqui (ver Trabalhos Futuros).
 
 ---
 
-## 10. Tabela de Resultados
+## 11. Tabela de Resultados
 
-| N | CPU-1 (s) | CPU-OMP (s) | GPU (s) | Speed-up (vs CPU-1) | Corretude |
-|---:|---:|---:|---:|---:|:---:|
-| 8.000   | 0,69  | 0,46  | 0,043 | 16,3× | 100% |
-| 16.000  | 2,21  | 1,88  | 0,123 | 18,0× | 100% |
-| 32.000  | 8,28  | 8,11  | 0,403 | 20,5× | 100% |
-| 50.000  | 20,44 | 19,44 | 0,927 | 22,0× | 100% |
-| 100.000 | 80,61 | 79,23 | 3,24  | **24,9×** | 100% |
+| N | CPU-1 (s) | CPU-OMP (s) | GPU (s) | Speed-up vs CPU-1 | vs CPU-OMP | Corretude |
+|---:|---:|---:|---:|---:|---:|:---:|
+| 8.000   | 0,69  | 0,46  | 0,043 | 16,3× | 10,7× | 100% |
+| 16.000  | 2,21  | 1,88  | 0,123 | 18,0× | 15,3× | 100% |
+| 32.000  | 8,28  | 8,11  | 0,403 | 20,5× | 20,1× | 100% |
+| 50.000  | 20,44 | 19,44 | 0,927 | 22,0× | 21,0× | 100% |
+| 100.000 | 80,61 | 79,23 | 3,24  | **24,9×** | **24,5×** | 100% |
 
-*Tempos = média ± desvio de várias repetições (T4 no Colab). Tabela completa em `resultados_benchmark.csv`.*
+*Tempos = média ± desvio de várias repetições (T4 no Colab; CPU = 2 vCPUs). Tabela completa em `resultados_benchmark.csv`.*
 
 - Speed-up máximo de **24,9×** vs CPU-1 e **24,5×** vs CPU-OpenMP, em N=100.000.
 - Corretude **100%** CPU ≡ GPU em todos os tamanhos (e ~10⁻⁹ vs scikit-learn).
@@ -244,18 +268,20 @@ com matriz N×N — e que o ganho cresce com o tamanho do problema. -->
 
 ---
 
-## 11. Análise dos Resultados
+## 12. Análise dos Resultados
 
-- **Escalabilidade:** a CPU segue O(N²); a GPU mantém tempos baixos → a distância **aumenta com N**.
-- **Baseline forte:** mesmo contra a **CPU OpenMP** (todos os núcleos), a GPU vence por boa margem.
+- **Escalabilidade:** a CPU segue O(N²); a GPU mantém tempos baixos → a distância **aumenta com N** (16,3× → 24,9×).
+- **Baseline duplo:** a GPU vence o 1-thread **e** o OpenMP; note que o OpenMP de 2 vCPUs satura cedo, então as duas curvas de speed-up quase coincidem em N grande.
 - **Gargalo interno:** Dunn e Silhueta concentram o tempo (par-a-par); DB é marginal.
 - **Transferência irrelevante:** H2D ≈ 0 na versão matrix-free → o tempo é **compute-bound**.
-- **(Opcional) float × double:** o modo `float` acelera na T4 (fp32 ≫ fp64) com erro controlado — trade-off precisão × velocidade.
+- **float × double:** o código compila as duas versões (`-DUSE_FLOAT`); na T4 o `float` (fp32 ≫ fp64) tende a acelerar mantendo o erro controlado — **trade-off** que deixamos disponível (medição detalhada fica como extensão).
 
 ---
 
-## 12. Limitações e Trabalhos Futuros
+## 13. Limitações e Trabalhos Futuros
 
+- **Dados sintéticos:** testamos com `make_blobs` (nuvens gaussianas bem-comportadas); faltam **datasets reais** e clusters difíceis (alongados, densidades distintas).
+- **Baseline de CPU modesto:** Colab gratuito = 2 vCPUs; um servidor com muitos núcleos daria um baseline OpenMP mais forte.
 - **Recomputação:** Dunn e Silhueta recalculam distâncias separadamente; um **kernel fundido** evitaria recomputar.
 - **Silhueta e K grande:** *shared memory* cresce com `blockDim×K` (limita K muito alto).
 - **Streams CUDA:** com matrix-free a cópia H2D já é mínima, então o overlap traria **pouco ganho** — fica como trabalho futuro (ou overlap de kernels independentes).
@@ -267,13 +293,24 @@ ao artigo-base (amostragem) como caminho para milhões de pontos. -->
 
 ---
 
-## 13. Conclusão
+## 14. Conclusão
 
 - Implementamos e **paralelizamos em CUDA** as três métricas de validação de clusters.
 - A decisão **matrix-free** eliminou o gargalo de memória e permitiu **escalar até 100.000 pontos**.
 - Mantivemos **corretude exata** (validada em 3 camadas) enquanto obtivemos **speed-up de até 24,9×** (vs CPU-1) e **24,5×** (vs CPU-OpenMP) em N=100.000.
 - Comparação **justa** contra CPU sequencial **e** CPU OpenMP, com **análise de breakdown** por etapa.
 - Entregáveis: código (`git`), `benchmark.py` automatizado, artigo (modelo SSCAD) e esta apresentação.
+
+---
+
+## 15. Referências
+
+- Ncir, C.-E. B. et al. *Parallel and scalable Dunn Index for the validation of big data clusters.* **Parallel Computing** (Elsevier). — *artigo-base.*
+- Dunn, J. C. (1973/74). *Well-separated clusters and optimal fuzzy partitions.* — índice de Dunn.
+- Rousseeuw, P. J. (1987). *Silhouettes: a graphical aid to the interpretation and validation of cluster analysis.* **J. Comput. Appl. Math.**
+- Davies, D. L.; Bouldin, D. W. (1979). *A cluster separation measure.* **IEEE TPAMI.**
+- Pedregosa, F. et al. (2011). *scikit-learn: Machine Learning in Python.* **JMLR** — *ground truth* de validação.
+- NVIDIA. *CUDA C++ Programming Guide.*
 
 ---
 
